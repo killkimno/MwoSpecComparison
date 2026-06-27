@@ -46,7 +46,8 @@ const WEIGHT_CLASS_LABELS = {
   assault: "Assault",
 };
 
-const MAX_COMPARE_MECHS = 3;
+const MAX_COMPARE_MECHS = 7;
+const COMPARE_RANK_EPSILON = 0.0001;
 
 const state = {
   index: null,
@@ -58,6 +59,8 @@ const state = {
   infoApplyQuirks: true,
   compareMode: false,
   compareMechIds: [],
+  compareBaselineMechId: null,
+  compareShowDeltas: true,
   selectedMech: null,
   selectedChassis: "",
   selectedItemId: null,
@@ -555,43 +558,103 @@ function infoDataForMech(mech) {
 }
 
 function compareText(value) {
-  return { text: value || "-", rank: null };
+  return { text: value || "-", rank: null, deltaDigits: 1, deltaUnit: "" };
+}
+
+function formatCompareNumber(value, digits = 1) {
+  if (!Number.isFinite(value)) return "-";
+  for (let precision = digits; precision >= 0; precision -= 1) {
+    const text = fmt(value, precision);
+    if (text.length <= 4) return text;
+  }
+  return fmt(value, 0);
+}
+
+function signedCompareNumber(value, digits = 1) {
+  if (!Number.isFinite(value)) return "-";
+  return `${value >= 0 ? "+" : "-"}${formatCompareNumber(Math.abs(value), digits)}`;
 }
 
 function compareNumber(value, digits = 1, unit = "") {
   return {
-    text: `${formatInfoNumber(value, digits)}${unit}`,
+    text: `${formatCompareNumber(value, digits)}${unit}`,
     rank: Number.isFinite(value) ? value : null,
+    deltaDigits: digits,
+    deltaUnit: unit,
   };
 }
 
 function compareNumberList(values, digits = 1, unit = "") {
   const numericValues = values.filter((value) => Number.isFinite(value));
   return {
-    text: `${values.map((value) => formatInfoNumber(value, digits)).join(" / ")}${unit}`,
+    text: `${values.map((value) => formatCompareNumber(value, digits)).join("/")}${unit}`,
     rank: numericValues.length ? numericValues.reduce((sum, value) => sum + value, 0) : null,
+    deltaDigits: digits,
+    deltaUnit: unit,
   };
 }
 
+function sameCompareRank(a, b) {
+  return Math.abs(a - b) < COMPARE_RANK_EPSILON;
+}
+
+function renderCompareDelta(delta, cell) {
+  if (Math.abs(delta) < COMPARE_RANK_EPSILON) return "";
+  const direction = delta > 0 ? "up" : "down";
+  const icon = delta > 0 ? "▲" : "▼";
+  return `
+    <span class="compare-delta compare-delta-${direction}">
+      <span class="compare-delta-icon" aria-hidden="true">${icon}</span>
+      <span>${signedCompareNumber(delta, cell.deltaDigits)}${cell.deltaUnit}</span>
+    </span>
+  `;
+}
+
+function compareDeltaForCell(cell, cells, entry) {
+  if (!state.compareShowDeltas) return "";
+  if (!Number.isFinite(cell.rank)) return "";
+  const rankedCells = cells.filter((item) => Number.isFinite(item.cell.rank));
+  if (rankedCells.length < 2) return "";
+
+  if (state.compareBaselineMechId !== null) {
+    const baseline = rankedCells.find((item) => String(item.entry.mech.id) === String(state.compareBaselineMechId));
+    if (!baseline || String(entry.mech.id) === String(state.compareBaselineMechId)) return "";
+    return renderCompareDelta(cell.rank - baseline.cell.rank, cell);
+  }
+
+  const ranks = rankedCells.map((item) => item.cell.rank);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  if (sameCompareRank(minRank, maxRank)) return "";
+  const referenceRank = sameCompareRank(cell.rank, maxRank) ? minRank : maxRank;
+  return renderCompareDelta(cell.rank - referenceRank, cell);
+}
+
 function renderCompareCell(row, data, entry) {
-  const cell = row.value(entry);
-  const ranks = data
-    .map((dataEntry) => row.value(dataEntry).rank)
+  const cells = data.map((dataEntry) => ({ entry: dataEntry, cell: row.value(dataEntry) }));
+  const cell = cells.find((item) => item.entry === entry)?.cell || row.value(entry);
+  const ranks = cells
+    .map((item) => item.cell.rank)
     .filter((rank) => Number.isFinite(rank));
   if (data.length < 2 || !Number.isFinite(cell.rank) || ranks.length < 2) {
-    return `<td>${cell.text}</td>`;
+    return `<td><span class="compare-cell-value">${cell.text}</span></td>`;
   }
 
   const minRank = Math.min(...ranks);
   const maxRank = Math.max(...ranks);
-  const minCount = ranks.filter((rank) => rank === minRank).length;
-  const maxCount = ranks.filter((rank) => rank === maxRank).length;
-  const className = cell.rank === maxRank && maxCount === 1
+  const className = sameCompareRank(minRank, maxRank)
+    ? ""
+    : sameCompareRank(cell.rank, maxRank)
     ? "compare-high"
-    : cell.rank === minRank && minCount === 1
+    : sameCompareRank(cell.rank, minRank)
       ? "compare-low"
       : "";
-  return `<td class="${className}">${cell.text}</td>`;
+  return `
+    <td>
+      <span class="compare-cell-value ${className}">${cell.text}</span>
+      ${compareDeltaForCell(cell, cells, entry)}
+    </td>
+  `;
 }
 
 function renderCompareTable(mechs) {
@@ -643,7 +706,16 @@ function renderCompareTable(mechs) {
               .map((entry) => `
                 <th scope="col">
                   <span class="compare-title">
-                    <strong>${entry.mech.display_name}</strong>
+                    <label class="compare-baseline-toggle" data-compare-baseline="${entry.mech.id}" title="기준">
+                      <input
+                        data-compare-baseline="${entry.mech.id}"
+                        name="compare-baseline"
+                        type="radio"
+                        ${String(state.compareBaselineMechId) === String(entry.mech.id) ? "checked" : ""}
+                      >
+                      <span>기준</span>
+                    </label>
+                    <strong>${variantCode(entry.mech)}</strong>
                     <button class="compare-remove" data-remove-compare="${entry.mech.id}" type="button" aria-label="${entry.mech.display_name} 비교에서 제거">x</button>
                   </span>
                   <span class="compare-meta">${entry.mech.faction || "Unknown"} - ${entry.stats.MaxTons || "?"}t</span>
@@ -675,6 +747,8 @@ function renderCompareTable(mechs) {
 function renderInfoPanel() {
   $("info-apply-quirks").checked = state.infoApplyQuirks;
   $("info-compare-mode").checked = state.compareMode;
+  $("info-compare-deltas").checked = state.compareShowDeltas;
+  $("info-compare-deltas-row").hidden = !state.compareMode;
 
   if (state.compareMode) {
     const mechs = compareMechs();
@@ -688,8 +762,8 @@ function renderInfoPanel() {
   $("mech-info").className = "info-grid";
   const mech = state.selectedMech;
   if (!mech) {
-    $("info-variant-name").textContent = "No mech selected";
-    $("info-variant-meta").textContent = "";
+    $("info-variant-name").textContent = "멕을 선택하세요";
+    $("info-variant-meta").textContent = "왼쪽 목록에서 카테고리를 펼친 뒤 멕을 선택하세요.";
     $("mech-info").innerHTML = "";
     return;
   }
@@ -1061,6 +1135,15 @@ function renderVariant() {
   renderComponents();
 }
 
+function renderSelectionPrompt() {
+  $("variant-name").textContent = "멕을 선택하세요";
+  $("variant-meta").textContent = "왼쪽 목록에서 카테고리를 펼친 뒤 멕을 선택하세요.";
+  renderSummary();
+  $("quirk-count").textContent = "None";
+  $("quirks").innerHTML = `<div class="empty">멕을 선택하면 쿼크가 표시됩니다.</div>`;
+  $("components").innerHTML = `<div class="empty">멕을 선택하면 구성 부품이 표시됩니다.</div>`;
+}
+
 function renderAll() {
   renderMechList();
   renderEquipmentList();
@@ -1068,6 +1151,8 @@ function renderAll() {
   renderInfoPanel();
   if (state.selectedMech) {
     renderVariant();
+  } else {
+    renderSelectionPrompt();
   }
 }
 
@@ -1080,6 +1165,9 @@ function selectMech(id) {
 
 function setCompareMode(enabled) {
   state.compareMode = enabled;
+  if (!enabled) {
+    state.compareBaselineMechId = null;
+  }
   if (enabled && !state.compareMechIds.length && state.selectedMech) {
     state.compareMechIds = [state.selectedMech.id];
     state.selectedChassis = state.selectedMech.chassis || state.selectedChassis;
@@ -1093,6 +1181,9 @@ function toggleCompareMech(id) {
   const index = state.compareMechIds.findIndex((mechId) => String(mechId) === String(id));
   if (index >= 0) {
     state.compareMechIds.splice(index, 1);
+    if (String(state.compareBaselineMechId) === String(id)) {
+      state.compareBaselineMechId = null;
+    }
   } else if (state.compareMechIds.length < MAX_COMPARE_MECHS) {
     state.compareMechIds.push(mech.id);
   } else {
@@ -1107,7 +1198,17 @@ function removeCompareMech(id) {
   const index = state.compareMechIds.findIndex((mechId) => String(mechId) === String(id));
   if (index < 0) return;
   state.compareMechIds.splice(index, 1);
+  if (String(state.compareBaselineMechId) === String(id)) {
+    state.compareBaselineMechId = null;
+  }
   renderAll();
+}
+
+function toggleCompareBaseline(id) {
+  const exists = state.compareMechIds.some((mechId) => String(mechId) === String(id));
+  if (!exists) return;
+  state.compareBaselineMechId = String(state.compareBaselineMechId) === String(id) ? null : id;
+  renderInfoPanel();
 }
 
 function selectItem(id) {
@@ -1118,7 +1219,7 @@ function selectItem(id) {
 
 function addSelectedItem(component) {
   const item = itemById(state.selectedItemId);
-  if (!item || !state.currentBuild.components[component]) return;
+  if (!item || !state.currentBuild?.components?.[component]) return;
   state.currentBuild.components[component].items.push({
     type: item.item_type === "weapon" ? "weapon" : item.item_type === "ammo" ? "ammo" : "module",
     item_id: item.id,
@@ -1130,7 +1231,7 @@ function addSelectedItem(component) {
 function removeItem(key) {
   const [component, indexText] = key.split(":");
   const index = Number(indexText);
-  const items = state.currentBuild.components[component]?.items;
+  const items = state.currentBuild?.components?.[component]?.items;
   if (!items || !Number.isInteger(index)) return;
   items.splice(index, 1);
   renderVariant();
@@ -1151,7 +1252,17 @@ function bindEvents() {
   $("info-compare-mode").addEventListener("change", (event) => {
     setCompareMode(event.target.checked);
   });
+  $("info-compare-deltas").addEventListener("change", (event) => {
+    state.compareShowDeltas = event.target.checked;
+    renderInfoPanel();
+  });
   $("mech-info").addEventListener("click", (event) => {
+    const baseline = event.target.closest("[data-compare-baseline]");
+    if (baseline) {
+      event.preventDefault();
+      toggleCompareBaseline(baseline.dataset.compareBaseline);
+      return;
+    }
     const remove = event.target.closest("[data-remove-compare]");
     if (remove) removeCompareMech(remove.dataset.removeCompare);
   });
@@ -1183,14 +1294,17 @@ function bindEvents() {
     if (remove) removeItem(remove.dataset.remove);
   });
   $("reset-stock").addEventListener("click", () => {
+    if (!state.selectedMech) return;
     state.currentBuild = buildFromLoadout(state.selectedMech);
     renderVariant();
   });
   $("save-build").addEventListener("click", () => {
+    if (!state.selectedMech || !state.currentBuild) return;
     localStorage.setItem(savedKey(state.selectedMech), JSON.stringify(state.currentBuild));
     $("data-status").textContent = "Build saved locally";
   });
   $("clear-build").addEventListener("click", () => {
+    if (!state.currentBuild) return;
     for (const component of Object.values(state.currentBuild.components)) {
       component.items = [];
     }
@@ -1227,7 +1341,7 @@ async function init() {
     state.loadouts = loadouts;
     state.omnipods = omnipods;
     $("data-status").textContent = `${state.index.counts.mechs} mechs loaded from local game data`;
-    selectMech(state.mechs.find((mech) => mech.name === "as7-d")?.id || state.mechs[0]?.id);
+    renderAll();
   } catch (error) {
     $("data-status").textContent = error.message;
     console.error(error);

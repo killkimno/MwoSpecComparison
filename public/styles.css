@@ -389,17 +389,18 @@ h3 {
 }
 
 .compare-table {
-  width: 100%;
-  min-width: 44rem;
+  width: max-content;
+  min-width: 0;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  table-layout: fixed;
+  font-size: 0.9rem;
 }
 
 .compare-table th,
 .compare-table td {
   border-bottom: 1px solid #263840;
   border-right: 1px solid #263840;
-  padding: 0.5rem 0.6rem;
+  padding: 0.36rem 0.42rem;
   vertical-align: middle;
 }
 
@@ -412,7 +413,8 @@ h3 {
   position: sticky;
   top: 0;
   z-index: 2;
-  min-width: 12rem;
+  width: 7.4rem;
+  min-width: 7.4rem;
   background: var(--panel-2);
   color: var(--text);
   text-align: center;
@@ -420,34 +422,56 @@ h3 {
 
 .compare-table thead th:first-child,
 .compare-table tbody th {
-  width: 12rem;
-  min-width: 12rem;
+  width: 9rem;
+  min-width: 9rem;
   text-align: left;
 }
 
 .compare-table thead th strong {
   display: block;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .compare-title {
   display: flex;
-  gap: 0.35rem;
-  align-items: flex-start;
+  gap: 0.28rem;
+  align-items: center;
   justify-content: center;
+  min-width: 0;
+}
+
+.compare-baseline-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.2rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.compare-baseline-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--blue);
 }
 
 .compare-remove {
   flex: 0 0 auto;
-  width: 1.35rem;
-  height: 1.35rem;
-  min-width: 1.35rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
   padding: 0;
   border-radius: 50%;
   border-color: #49606a;
   background: #101719;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1;
 }
 
@@ -472,22 +496,55 @@ h3 {
   background: #101719;
   color: var(--text);
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .compare-table td {
-  min-width: 12rem;
+  width: 7.4rem;
+  min-width: 7.4rem;
   background: #101719;
   color: var(--text);
   text-align: right;
   font-weight: 700;
+  white-space: nowrap;
 }
 
-.compare-table td.compare-high {
+.compare-cell-value {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.compare-cell-value.compare-high {
   color: var(--green);
 }
 
-.compare-table td.compare-low {
+.compare-cell-value.compare-low {
   color: var(--red);
+}
+
+.compare-delta {
+  display: inline-flex;
+  gap: 0.14rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.12rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.compare-delta-up {
+  color: var(--green);
+}
+
+.compare-delta-down {
+  color: var(--red);
+}
+
+.compare-delta-icon {
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .compare-table .compare-group th {
