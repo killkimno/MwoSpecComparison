@@ -17,8 +17,8 @@
       </header>
 
       <nav class="main-tabs" aria-label="Main tabs">
-        <button class="tab-button active" type="button" data-main-tab="mechlab" aria-controls="tab-mechlab">현재 멕랩</button>
-        <button class="tab-button" type="button" data-main-tab="info" aria-controls="tab-info">비교/정보</button>
+        <button class="tab-button" type="button" data-main-tab="mechlab" aria-controls="tab-mechlab" disabled aria-disabled="true">현재 멕랩</button>
+        <button class="tab-button active" type="button" data-main-tab="info" aria-controls="tab-info">비교/정보</button>
         <button class="tab-button" type="button" data-main-tab="stats" aria-controls="tab-stats">통계</button>
       </nav>
 
@@ -37,7 +37,7 @@
           </aside>
 
           <div class="tab-content">
-            <section id="tab-mechlab" class="tab-panel active">
+            <section id="tab-mechlab" class="tab-panel" hidden>
               <div class="workspace">
                 <section class="variant-panel">
                   <div>
@@ -87,7 +87,7 @@
               </div>
             </section>
 
-            <section id="tab-info" class="tab-panel info-workspace" hidden>
+            <section id="tab-info" class="tab-panel info-workspace active">
               <section class="variant-panel">
                 <div>
                   <h2 id="info-variant-name">No mech selected</h2>

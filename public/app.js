@@ -55,7 +55,7 @@ const state = {
   equipment: null,
   loadouts: {},
   omnipods: {},
-  activeMainTab: "mechlab",
+  activeMainTab: "info",
   infoApplyQuirks: true,
   compareMode: false,
   compareMechIds: [],
@@ -213,6 +213,7 @@ function currentDefinition(mech = state.selectedMech) {
 }
 
 function setMainTab(tabName) {
+  if (tabName === "mechlab") tabName = "info";
   state.activeMainTab = tabName;
   document.querySelectorAll("[data-main-tab]").forEach((button) => {
     const active = button.dataset.mainTab === tabName;
@@ -630,6 +631,27 @@ function compareDeltaForCell(cell, cells, entry) {
   return renderCompareDelta(cell.rank - referenceRank, cell);
 }
 
+function compareColorClassForCell(cell, cells, entry) {
+  if (!Number.isFinite(cell.rank)) return "";
+  const rankedCells = cells.filter((item) => Number.isFinite(item.cell.rank));
+  if (rankedCells.length < 2) return "";
+
+  if (state.compareBaselineMechId !== null) {
+    const baseline = rankedCells.find((item) => String(item.entry.mech.id) === String(state.compareBaselineMechId));
+    if (!baseline || String(entry.mech.id) === String(state.compareBaselineMechId)) return "";
+    if (sameCompareRank(cell.rank, baseline.cell.rank)) return "";
+    return cell.rank > baseline.cell.rank ? "compare-high" : "compare-low";
+  }
+
+  const ranks = rankedCells.map((item) => item.cell.rank);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  if (sameCompareRank(minRank, maxRank)) return "";
+  if (sameCompareRank(cell.rank, maxRank)) return "compare-high";
+  if (sameCompareRank(cell.rank, minRank)) return "compare-low";
+  return "";
+}
+
 function renderCompareCell(row, data, entry) {
   const cells = data.map((dataEntry) => ({ entry: dataEntry, cell: row.value(dataEntry) }));
   const cell = cells.find((item) => item.entry === entry)?.cell || row.value(entry);
@@ -640,15 +662,7 @@ function renderCompareCell(row, data, entry) {
     return `<td><span class="compare-cell-value">${cell.text}</span></td>`;
   }
 
-  const minRank = Math.min(...ranks);
-  const maxRank = Math.max(...ranks);
-  const className = sameCompareRank(minRank, maxRank)
-    ? ""
-    : sameCompareRank(cell.rank, maxRank)
-    ? "compare-high"
-    : sameCompareRank(cell.rank, minRank)
-      ? "compare-low"
-      : "";
+  const className = compareColorClassForCell(cell, cells, entry);
   return `
     <td>
       <span class="compare-cell-value ${className}">${cell.text}</span>
