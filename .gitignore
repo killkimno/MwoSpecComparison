@@ -1,0 +1,4 @@
+public/assets/icons/
+.mechlab-server.pid
+__pycache__/
+*.pyc

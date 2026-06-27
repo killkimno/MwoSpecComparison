@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local MWO Mechlab</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <h1>Local MWO Mechlab</h1>
+          <p id="data-status">Loading local data...</p>
+        </div>
+        <div class="summary-strip" id="summary-strip"></div>
+      </header>
+
+      <nav class="main-tabs" aria-label="Main tabs">
+        <button class="tab-button active" type="button" data-main-tab="mechlab" aria-controls="tab-mechlab">현재 멕랩</button>
+        <button class="tab-button" type="button" data-main-tab="info" aria-controls="tab-info">비교/정보</button>
+        <button class="tab-button" type="button" data-main-tab="stats" aria-controls="tab-stats">통계</button>
+      </nav>
+
+      <main class="app-main">
+        <div id="mech-browser-layout" class="mech-browser-layout">
+          <aside class="sidebar">
+            <div class="toolbar">
+              <input id="mech-search" type="search" placeholder="Search chassis or variant">
+              <select id="faction-filter">
+                <option value="">All factions</option>
+                <option value="InnerSphere">Inner Sphere</option>
+                <option value="Clan">Clan</option>
+              </select>
+            </div>
+            <div id="mech-list" class="mech-list"></div>
+          </aside>
+
+          <div class="tab-content">
+            <section id="tab-mechlab" class="tab-panel active">
+              <div class="workspace">
+                <section class="variant-panel">
+                  <div>
+                    <h2 id="variant-name">No mech selected</h2>
+                    <div id="variant-meta" class="muted"></div>
+                  </div>
+                  <div class="actions">
+                    <button id="reset-stock" type="button">Stock</button>
+                    <button id="save-build" type="button">Save</button>
+                    <button id="clear-build" type="button">Clear</button>
+                  </div>
+                </section>
+
+                <section class="quirks-panel">
+                  <div class="section-title-row">
+                    <h3>Applied Quirks</h3>
+                    <span id="quirk-count" class="muted"></span>
+                  </div>
+                  <div id="quirks" class="quirks"></div>
+                </section>
+
+                <section class="mechlab-grid">
+                  <div class="components-panel">
+                    <h3>Components</h3>
+                    <div id="components" class="components"></div>
+                  </div>
+
+                  <div class="equipment-panel">
+                    <h3>Equipment</h3>
+                    <div class="toolbar equipment-toolbar">
+                      <input id="item-search" type="search" placeholder="Search equipment">
+                      <select id="item-family">
+                        <option value="">All equipment</option>
+                        <option value="weapons">Weapons</option>
+                        <option value="ammo">Ammo</option>
+                        <option value="engines">Engines</option>
+                        <option value="equipment">Equipment</option>
+                        <option value="jumpjets">Jump jets</option>
+                        <option value="masc">MASC</option>
+                        <option value="weapon_mods">Weapon mods</option>
+                      </select>
+                    </div>
+                    <div id="selected-item" class="selected-item muted">No item selected</div>
+                    <div id="item-list" class="item-list"></div>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section id="tab-info" class="tab-panel info-workspace" hidden>
+              <section class="variant-panel">
+                <div>
+                  <h2 id="info-variant-name">No mech selected</h2>
+                  <div id="info-variant-meta" class="muted"></div>
+                </div>
+                <label class="toggle-row">
+                  <input id="info-apply-quirks" type="checkbox" checked>
+                  <span>쿼크 적용</span>
+                </label>
+              </section>
+              <div id="mech-info" class="info-grid"></div>
+            </section>
+          </div>
+        </div>
+
+        <section id="tab-stats" class="tab-panel stats-panel" hidden></section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
