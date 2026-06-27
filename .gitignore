@@ -1,4 +1,6 @@
 public/assets/icons/
 .mechlab-server.pid
+.local-preview-server.pid
+.local-preview-*.log
 __pycache__/
 *.pyc

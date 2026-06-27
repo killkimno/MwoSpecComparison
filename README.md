@@ -16,6 +16,13 @@ Then open `http://localhost:8000/`.
 
 Do not open `public/index.html` directly with `file://`; browsers block `fetch()` access to local JSON files.
 
+Windows helper scripts:
+
+- `Start-Local-Preview.bat` starts a local preview server for the `public` folder and opens the app.
+- `Stop-Local-Preview.bat` stops the preview server started by the start script.
+
+These helper scripts live outside `public`, so GitHub Pages does not publish them.
+
 ## Update Data
 
 ```powershell
