@@ -230,6 +230,7 @@ function setMainTab(tabName) {
   });
   $("mech-browser-layout").hidden = tabName === "stats";
   $("summary-strip").hidden = tabName !== "mechlab";
+  updateCompareOverlay();
 }
 
 function addQuirk(collector, quirk, source) {
@@ -744,6 +745,14 @@ function renderCompareTable(mechs) {
     { label: "아머 + 스트럭쳐 총합", value: (entry) => compareNumber(entry.combinedTotal, 0) },
     { label: "아머 총합", value: (entry) => compareNumber(entry.armorTotal, 0) },
     { label: "스트럭쳐 총합", value: (entry) => compareNumber(entry.structureTotal, 0) },
+    { group: "기동성" },
+    { label: "최대 속도", value: (entry) => compareNumber(entry.movement.maxSpeed, 1) },
+    { label: "가속도", value: (entry) => compareNumber(entry.movement.acceleration, 1) },
+    { label: "감속도", value: (entry) => compareNumber(entry.movement.deceleration, 1) },
+    { label: "선회 속도", value: (entry) => compareNumber(entry.movement.turnSpeed, 2) },
+    { label: "회전각 X", value: (entry) => compareNumberList(entry.movement.angleX, 1) },
+    { label: "회전각 Y", value: (entry) => compareNumberList(entry.movement.angleY, 1) },
+    { label: "몸통 회전속도", value: (entry) => compareNumber(entry.movement.torsoSpeed, 1) },
     { group: "종합 내구" },
     { label: "아머 + 스트럭쳐 총합", value: (entry) => compareNumber(entry.combinedTotal, 0) },
     ...bodyRows.map((row) => ({ label: row.label, value: row.combined })),
@@ -753,14 +762,6 @@ function renderCompareTable(mechs) {
     { group: "스트럭쳐 정보" },
     { label: "스트럭쳐 총합", value: (entry) => compareNumber(entry.structureTotal, 0) },
     ...bodyRows.map((row) => ({ label: row.label, value: row.structure })),
-    { group: "기동성" },
-    { label: "최대 속도", value: (entry) => compareNumber(entry.movement.maxSpeed, 1) },
-    { label: "가속도", value: (entry) => compareNumber(entry.movement.acceleration, 1) },
-    { label: "감속도", value: (entry) => compareNumber(entry.movement.deceleration, 1) },
-    { label: "선회 속도", value: (entry) => compareNumber(entry.movement.turnSpeed, 2) },
-    { label: "회전각 X", value: (entry) => compareNumberList(entry.movement.angleX, 1) },
-    { label: "회전각 Y", value: (entry) => compareNumberList(entry.movement.angleY, 1) },
-    { label: "몸통 회전속도", value: (entry) => compareNumber(entry.movement.torsoSpeed, 1) },
     { group: "쿼크" },
     { label: "쿼크 수", value: (entry) => compareNumber(entry.quirks.length, 0) },
   ];
@@ -835,6 +836,113 @@ function renderCompareTable(mechs) {
   `;
 }
 
+function compareSelectionText(mechs = compareMechs()) {
+  return `${mechs.length}/${MAX_COMPARE_MECHS} 선택됨${mechs.length ? ` - ${mechs.map(variantCode).join(", ")}` : ""}`;
+}
+
+function renderCompareOverlayCell(entry) {
+  const isBaseline = String(state.compareBaselineMechId) === String(entry.mech.id);
+  return `
+    <div
+      class="compare-header-overlay-cell ${isBaseline ? "compare-baseline-column" : ""}"
+      data-compare-baseline="${entry.mech.id}"
+      title="기준으로 설정"
+    >
+      <span class="compare-title">
+        <label class="compare-baseline-toggle" data-compare-baseline="${entry.mech.id}" title="기준">
+          <input
+            data-compare-baseline="${entry.mech.id}"
+            name="compare-baseline-overlay"
+            type="radio"
+            ${isBaseline ? "checked" : ""}
+          >
+          <span>기준</span>
+        </label>
+        <strong>${variantCode(entry.mech)}</strong>
+      </span>
+      <span class="compare-meta">${entry.mech.faction || "Unknown"} - ${entry.stats.MaxTons || "?"}t</span>
+    </div>
+  `;
+}
+
+function renderCompareOverlayHeader(mechs) {
+  return `
+    <div class="compare-header-overlay-cell compare-header-overlay-item">항목</div>
+    <div class="compare-header-overlay-track">
+      ${mechs.map((mech) => renderCompareOverlayCell(infoDataForMech(mech))).join("")}
+    </div>
+  `;
+}
+
+function shouldShowCompareOverlay() {
+  if (!state.compareMode || state.activeMainTab !== "info") return false;
+  const layout = $("mech-browser-layout");
+  const table = document.querySelector(".compare-table");
+  const tableHead = document.querySelector(".compare-table thead");
+  const tabContent = document.querySelector(".tab-content");
+  if (!layout || layout.hidden || !table || !tableHead || !tabContent) return false;
+  const tableRect = table.getBoundingClientRect();
+  const headRect = tableHead.getBoundingClientRect();
+  const contentRect = tabContent.getBoundingClientRect();
+  return headRect.bottom <= contentRect.top + 6 && tableRect.bottom > contentRect.top + 56;
+}
+
+function updateCompareOverlay() {
+  const overlay = $("compare-overlay");
+  if (!overlay) return;
+  const mechs = compareMechs();
+  const shouldShow = shouldShowCompareOverlay();
+  if (!shouldShow) {
+    overlay.hidden = true;
+    return;
+  }
+
+  const cells = $("compare-overlay-cells");
+  if (cells) {
+    cells.innerHTML = renderCompareOverlayHeader(mechs);
+  }
+
+  const tableWrap = document.querySelector(".compare-table-wrap");
+  const tabContent = document.querySelector(".tab-content");
+  const tableHead = document.querySelector(".compare-table thead");
+  const headerCells = Array.from(document.querySelectorAll(".compare-table thead th"));
+  if (!tableWrap || !tabContent) {
+    overlay.hidden = true;
+    return;
+  }
+
+  const wrapRect = tableWrap.getBoundingClientRect();
+  const contentRect = tabContent.getBoundingClientRect();
+  const left = Math.max(wrapRect.left, contentRect.left);
+  const right = Math.min(wrapRect.right, window.innerWidth - 8);
+  const top = Math.max(contentRect.top, 0);
+  const width = right - left;
+
+  if (width < 80) {
+    overlay.hidden = true;
+    return;
+  }
+
+  const track = cells?.querySelector(".compare-header-overlay-track");
+  const overlayCells = cells ? Array.from(cells.querySelectorAll(".compare-header-overlay-cell")) : [];
+  overlayCells.forEach((cell, index) => {
+    const headerCell = headerCells[index];
+    if (!headerCell) return;
+    const width = headerCell.getBoundingClientRect().width;
+    cell.style.width = `${width}px`;
+    cell.style.minWidth = `${width}px`;
+  });
+  if (track) {
+    track.style.transform = `translateX(${-tableWrap.scrollLeft}px)`;
+  }
+
+  overlay.style.left = `${left}px`;
+  overlay.style.top = `${top}px`;
+  overlay.style.width = `${width}px`;
+  overlay.style.height = tableHead ? `${tableHead.getBoundingClientRect().height}px` : "";
+  overlay.hidden = false;
+}
+
 function renderInfoPanel() {
   $("info-apply-quirks").checked = state.infoApplyQuirks;
   $("info-compare-mode").checked = state.compareMode;
@@ -845,18 +953,22 @@ function renderInfoPanel() {
   if (state.compareMode) {
     const mechs = compareMechs();
     $("info-variant-name").textContent = "멕 비교";
-    $("info-variant-meta").textContent = `${mechs.length}/${MAX_COMPARE_MECHS} 선택됨`;
+    $("info-variant-meta").textContent = compareSelectionText(mechs);
     $("mech-info").className = "compare-grid";
     $("mech-info").innerHTML = renderCompareTable(mechs);
+    document.querySelector(".compare-table-wrap")?.addEventListener("scroll", updateCompareOverlay, { passive: true });
+    updateCompareOverlay();
     return;
   }
 
+  updateCompareOverlay();
   $("mech-info").className = "info-grid";
   const mech = state.selectedMech;
   if (!mech) {
     $("info-variant-name").textContent = "멕을 선택하세요";
     $("info-variant-meta").textContent = "왼쪽 목록에서 카테고리를 펼친 뒤 멕을 선택하세요.";
     $("mech-info").innerHTML = "";
+    updateCompareOverlay();
     return;
   }
   const stats = currentDefinition().stats || {};
@@ -1376,6 +1488,20 @@ function bindEvents() {
     state.compareShowDeltas = event.target.checked;
     renderInfoPanel();
   });
+  $("compare-overlay").addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-compare]");
+    if (remove) {
+      removeCompareMech(remove.dataset.removeCompare);
+      return;
+    }
+    const baseline = event.target.closest("[data-compare-baseline]");
+    if (baseline) {
+      event.preventDefault();
+      toggleCompareBaseline(baseline.dataset.compareBaseline);
+    }
+  });
+  document.querySelector(".tab-content").addEventListener("scroll", updateCompareOverlay, { passive: true });
+  window.addEventListener("resize", updateCompareOverlay, { passive: true });
   $("mech-info").addEventListener("click", (event) => {
     const remove = event.target.closest("[data-remove-compare]");
     if (remove) {
