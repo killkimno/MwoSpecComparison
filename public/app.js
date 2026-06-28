@@ -46,6 +46,11 @@ const WEIGHT_CLASS_LABELS = {
   assault: "Assault",
 };
 
+const FACTION_LABELS = {
+  Clan: "클랜",
+  InnerSphere: "이너스피어",
+};
+
 const MAX_COMPARE_MECHS = 15;
 const COMPARE_RANK_EPSILON = 0.0001;
 const DEFAULT_COLLAPSED_COMPARE_CATEGORIES = ["종합 내구", "아머 정보", "스트럭쳐 정보"];
@@ -63,6 +68,9 @@ const state = {
   compareBaselineMechId: null,
   compareShowDeltas: true,
   collapsedCompareCategories: new Set(DEFAULT_COLLAPSED_COMPARE_CATEGORIES),
+  largeMechList: true,
+  mechSort: "default",
+  mechListSummaryCache: new Map(),
   selectedMech: null,
   selectedChassis: "",
   expandedChassis: new Set(),
@@ -132,6 +140,40 @@ function hardpointBadges(definition) {
     .join("");
 }
 
+function mechListQuirkValues(mech) {
+  if (!state.infoApplyQuirks) return {};
+  const values = {};
+  (currentDefinition(mech).quirks || []).forEach((quirk) => {
+    const key = String(quirk.name || "").toLowerCase();
+    if (key) values[key] = number(values[key]) + number(quirk.value);
+  });
+  return values;
+}
+
+function mechListSummary(mech) {
+  const key = `${mech.id}:${state.infoApplyQuirks ? 1 : 0}`;
+  const cached = state.mechListSummaryCache.get(key);
+  if (cached) return cached;
+
+  const values = mechListQuirkValues(mech);
+  const baseArmorRows = armorInfoRows({}, mech);
+  const baseStructureRows = structureInfoRows({}, mech);
+  const baseCombinedRows = combinedDurabilityRows(baseArmorRows, baseStructureRows);
+  const armorRows = armorInfoRows(values, mech);
+  const structureRows = structureInfoRows(values, mech);
+  const combinedRows = combinedDurabilityRows(armorRows, structureRows);
+  const baseMovement = movementInfo({}, mech);
+  const summary = {
+    stats: currentDefinition(mech).stats || {},
+    baseCombinedTotal: baseCombinedRows.reduce((sum, row) => sum + number(row.total), 0),
+    combinedTotal: combinedRows.reduce((sum, row) => sum + number(row.total), 0),
+    baseMovement,
+    movement: movementInfo(values, mech),
+  };
+  state.mechListSummaryCache.set(key, summary);
+  return summary;
+}
+
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -158,6 +200,71 @@ function chassisDisplayName(variants) {
 
 function sortMechsByVariant(a, b) {
   return variantCode(a).localeCompare(variantCode(b), undefined, { numeric: true });
+}
+
+function factionRank(faction) {
+  if (faction === "Clan") return 0;
+  if (faction === "InnerSphere") return 1;
+  return 99;
+}
+
+function factionLabel(faction) {
+  return FACTION_LABELS[faction] || faction || "Unknown";
+}
+
+function factionClass(faction) {
+  return faction === "Clan" ? "faction-clan" : "faction-innersphere";
+}
+
+function sortChassisGroups(a, b) {
+  const tons = Number(a.tons) - Number(b.tons);
+  const faction = factionRank(a.faction) - factionRank(b.faction);
+  if (state.mechSort === "tons") {
+    return tons || faction || a.label.localeCompare(b.label);
+  }
+  return faction || tons || a.order - b.order;
+}
+
+function chassisGroupsForWeight(grouped, weightClass) {
+  return Array.from(grouped.get(weightClass).entries())
+    .map(([chassis, variants], order) => {
+      variants.sort(sortMechsByVariant);
+      return {
+        chassis,
+        variants,
+        label: chassisDisplayName(variants),
+        tons: variants[0]?.definition?.stats?.MaxTons || "?",
+        faction: variants[0]?.faction || "Unknown",
+        order,
+      };
+    })
+    .sort(sortChassisGroups);
+}
+
+function factionSectionsForChassisGroups(chassisGroups) {
+  const sections = [];
+  chassisGroups.forEach((group) => {
+    const last = sections[sections.length - 1];
+    if (!last || last.faction !== group.faction) {
+      sections.push({
+        faction: group.faction,
+        groups: [],
+        variantCount: 0,
+      });
+    }
+    const section = sections[sections.length - 1];
+    section.groups.push(group);
+    section.variantCount += group.variants.length;
+  });
+  return sections;
+}
+
+function sortedClassNames(grouped) {
+  return Array.from(grouped.keys()).sort((a, b) => {
+    const aIndex = WEIGHT_CLASS_ORDER.indexOf(a);
+    const bIndex = WEIGHT_CLASS_ORDER.indexOf(b);
+    return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) || a.localeCompare(b);
+  });
 }
 
 function groupMechsForList(mechs) {
@@ -1148,25 +1255,34 @@ function renderMechList() {
   const grouped = groupMechsForList(filtered);
   const firstCompareMech = compareMechs()[0];
   const activeChassis = state.selectedChassis || (state.compareMode ? firstCompareMech?.chassis : state.selectedMech?.chassis) || "";
-  const classNames = Array.from(grouped.keys()).sort((a, b) => {
-    const aIndex = WEIGHT_CLASS_ORDER.indexOf(a);
-    const bIndex = WEIGHT_CLASS_ORDER.indexOf(b);
-    return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex) || a.localeCompare(b);
-  });
+  const classNames = sortedClassNames(grouped);
+
+  const layout = $("mech-browser-layout");
+  const list = $("mech-list");
+  const toggle = $("mech-list-view-toggle");
+  layout.classList.toggle("large-mech-list-layout", state.largeMechList);
+  list.classList.toggle("mech-list-large", state.largeMechList);
+  if (toggle) {
+    toggle.classList.toggle("active", state.largeMechList);
+    toggle.setAttribute("aria-pressed", String(state.largeMechList));
+    toggle.textContent = state.largeMechList ? "<<" : ">>";
+    toggle.title = state.largeMechList ? "작은 리스트 보기" : "큰 리스트 보기";
+  }
 
   if (!filtered.length) {
     $("mech-list").innerHTML = `<div class="empty">No mechs match the current filters.</div>`;
     return;
   }
 
+  if (state.largeMechList) {
+    renderLargeMechList(classNames, grouped, activeChassis);
+    return;
+  }
+
   $("mech-list").innerHTML = classNames
     .map((weightClass) => {
-      const chassisGroups = Array.from(grouped.get(weightClass).entries())
-        .map(([chassis, variants]) => {
-          variants.sort(sortMechsByVariant);
-          return { chassis, variants, label: chassisDisplayName(variants), tons: variants[0]?.definition?.stats?.MaxTons || "?" };
-        })
-        .sort((a, b) => Number(a.tons) - Number(b.tons) || a.label.localeCompare(b.label));
+      const chassisGroups = chassisGroupsForWeight(grouped, weightClass);
+      const factionSections = factionSectionsForChassisGroups(chassisGroups);
       const count = chassisGroups.reduce((sum, group) => sum + group.variants.length, 0);
       return `
         <section class="class-section">
@@ -1174,51 +1290,131 @@ function renderMechList() {
             <strong>${WEIGHT_CLASS_LABELS[weightClass] || formatChassisName(weightClass)}</strong>
             <span>${chassisGroups.length} chassis / ${count} variants</span>
           </div>
-          <div class="chassis-list">
-            ${chassisGroups
-              .map((group) => {
-                const active = group.chassis === activeChassis ? " active" : "";
-                const expanded = state.expandedChassis.has(group.chassis);
-                const factions = Array.from(new Set(group.variants.map((mech) => mech.faction).filter(Boolean))).join(", ");
-                return `
-                  <div class="chassis-group${active}${expanded ? " expanded" : ""}">
-                    <button class="chassis-row${active}" data-chassis="${group.chassis}" type="button" aria-expanded="${expanded}">
-                      <span class="row-title">
-                        <span class="chassis-title"><span class="expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span><strong>${group.label}</strong></span>
-                        <span>${group.tons}t</span>
-                      </span>
-                      <span class="badge-line">
-                        <span class="badge">${group.variants.length} variants</span>
-                        ${factions ? `<span class="badge">${factions}</span>` : ""}
-                      </span>
-                    </button>
-                    ${expanded ? `
-                      <div class="variant-list">
-                        ${group.variants
-                          .map((mech) => {
-                            const isSelected = state.compareMode
-                              ? state.compareMechIds.some((id) => String(id) === String(mech.id))
-                              : state.selectedMech?.id === mech.id;
-                            const selected = isSelected ? " active" : "";
-                            return `
-                              <button class="mech-row variant-row${selected}" data-mech="${mech.id}" type="button">
-                                <span class="row-title"><strong>${variantCode(mech)}</strong><span>${mech.faction || "unknown"}</span></span>
-                                <span class="badge-line">${hardpointBadges(mech.definition)}</span>
-                              </button>
-                            `;
-                          })
-                          .join("")}
-                      </div>
-                    ` : ""}
-                  </div>
-                `;
-              })
-              .join("")}
-          </div>
+          ${factionSections.map((section) => renderFactionSection(section, activeChassis, false)).join("")}
         </section>
       `;
     })
     .join("");
+}
+
+function renderLargeMechList(classNames, grouped, activeChassis) {
+  $("mech-list").innerHTML = classNames
+    .map((weightClass) => {
+      const chassisGroups = chassisGroupsForWeight(grouped, weightClass);
+      const factionSections = factionSectionsForChassisGroups(chassisGroups);
+      const count = chassisGroups.reduce((sum, group) => sum + group.variants.length, 0);
+      return `
+        <section class="class-section mech-card-section">
+          <div class="class-heading">
+            <strong>${WEIGHT_CLASS_LABELS[weightClass] || formatChassisName(weightClass)}</strong>
+            <span>${chassisGroups.length} chassis / ${count} variants</span>
+          </div>
+          ${factionSections.map((section) => renderFactionSection(section, activeChassis, true)).join("")}
+        </section>
+      `;
+    })
+    .join("");
+}
+
+function renderFactionSection(section, activeChassis, large) {
+  const listClass = large ? "chassis-list large-chassis-list" : "chassis-list";
+  const groupHtml = section.groups.map((group) => large ? renderLargeChassisGroup(group, activeChassis) : renderSmallChassisGroup(group, activeChassis)).join("");
+  return `
+    <section class="faction-section ${factionClass(section.faction)}">
+      <div class="faction-heading ${factionClass(section.faction)}">
+        <strong>${factionLabel(section.faction)}</strong>
+        <span>${section.groups.length} chassis / ${section.variantCount} variants</span>
+      </div>
+      <div class="${listClass}">
+        ${groupHtml}
+      </div>
+    </section>
+  `;
+}
+
+function renderSmallChassisGroup(group, activeChassis) {
+  const active = group.chassis === activeChassis ? " active" : "";
+  const expanded = state.expandedChassis.has(group.chassis);
+  return `
+    <div class="chassis-group${active}${expanded ? " expanded" : ""}">
+      <button class="chassis-row${active}" data-chassis="${group.chassis}" type="button" aria-expanded="${expanded}">
+        <span class="row-title">
+          <span class="chassis-title"><span class="expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span><strong>${group.label}</strong></span>
+          <span>${group.tons}t</span>
+        </span>
+        <span class="badge-line">
+          <span class="badge">${group.variants.length} variants</span>
+        </span>
+      </button>
+      ${expanded ? `
+        <div class="variant-list">
+          ${group.variants.map(renderVariantRow).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderVariantRow(mech) {
+  const isSelected = state.compareMode
+    ? state.compareMechIds.some((id) => String(id) === String(mech.id))
+    : state.selectedMech?.id === mech.id;
+  const selected = isSelected ? " active" : "";
+  return `
+    <button class="mech-row variant-row${selected}" data-mech="${mech.id}" type="button">
+      <span class="row-title"><strong>${variantCode(mech)}</strong><span>${mech.faction || "unknown"}</span></span>
+      <span class="badge-line">${hardpointBadges(mech.definition)}</span>
+    </button>
+  `;
+}
+
+function renderLargeChassisGroup(group, activeChassis) {
+  const active = group.chassis === activeChassis ? " active" : "";
+  const expanded = state.expandedChassis.has(group.chassis);
+  return `
+    <div class="chassis-group${active}${expanded ? " expanded" : ""}">
+      <button class="chassis-row large-chassis-row${active}" data-chassis="${group.chassis}" type="button" aria-expanded="${expanded}">
+        <span class="chassis-title">
+          <span class="expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span>
+          <strong>${group.label}</strong>
+        </span>
+        <span class="large-chassis-ton">${group.tons}t</span>
+        <span class="large-chassis-count">${group.variants.length}</span>
+      </button>
+      ${expanded ? `
+        <div class="mech-card-grid">
+          ${group.variants.map((mech) => renderMechCard(mech, activeChassis)).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderMechCard(mech, activeChassis) {
+  const data = mechListSummary(mech);
+  const selected = state.compareMode
+    ? state.compareMechIds.some((id) => String(id) === String(mech.id))
+    : state.selectedMech?.id === mech.id;
+  const active = selected ? " active" : "";
+  const chassisActive = mech.chassis === activeChassis ? " chassis-active" : "";
+  const durabilityBoosted = state.infoApplyQuirks && Math.abs(data.combinedTotal - data.baseCombinedTotal) >= 0.0001;
+  const accelerationBoosted = state.infoApplyQuirks && Math.abs(data.movement.acceleration - data.baseMovement.acceleration) >= 0.0001;
+  const decelerationBoosted = state.infoApplyQuirks && Math.abs(data.movement.deceleration - data.baseMovement.deceleration) >= 0.0001;
+  const turnBoosted = state.infoApplyQuirks && Math.abs(data.movement.turnSpeed - data.baseMovement.turnSpeed) >= 0.0001;
+  return `
+    <button class="mech-card${active}${chassisActive}" data-mech="${mech.id}" type="button">
+      <span class="mech-card-title">
+        <strong>${mech.display_name || variantCode(mech)}</strong>
+        <span>${mech.faction || "Unknown"} · ${data.stats.MaxTons || "?"}t</span>
+      </span>
+      <span class="mech-card-stats">
+        <span><span>총 내구도</span><strong class="${durabilityBoosted ? "boosted" : ""}">${formatInfoNumber(data.combinedTotal, 0)}</strong></span>
+        <span><span>가속/감속</span><strong><span class="${accelerationBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.acceleration, 1)}</span> / <span class="${decelerationBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.deceleration, 1)}</span></strong></span>
+        <span><span>선회속도</span><strong class="${turnBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.turnSpeed, 2)}</strong></span>
+      </span>
+      <span class="badge-line">${hardpointBadges(mech.definition)}</span>
+    </button>
+  `;
 }
 
 function renderEquipmentList() {
@@ -1474,11 +1670,21 @@ function bindEvents() {
   $("mech-search").addEventListener("input", renderMechList);
   $("faction-filter").addEventListener("change", renderMechList);
   $("weight-filter").addEventListener("change", renderMechList);
+  $("mech-sort").addEventListener("change", (event) => {
+    state.mechSort = event.target.value;
+    renderMechList();
+  });
   $("item-search").addEventListener("input", renderEquipmentList);
   $("item-family").addEventListener("change", renderEquipmentList);
   $("info-apply-quirks").addEventListener("change", (event) => {
     state.infoApplyQuirks = event.target.checked;
+    renderMechList();
     renderInfoPanel();
+  });
+  $("mech-list-view-toggle").addEventListener("click", () => {
+    state.largeMechList = !state.largeMechList;
+    renderMechList();
+    updateCompareOverlay();
   });
   $("info-compare-mode").addEventListener("change", (event) => {
     setCompareMode(event.target.checked);

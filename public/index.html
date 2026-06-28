@@ -14,6 +14,7 @@
           <p id="data-status">Loading local data...</p>
         </div>
         <div class="summary-strip" id="summary-strip"></div>
+        <a class="donate-link" href="https://ko-fi.com/killkimno" target="_blank" rel="noopener noreferrer" aria-label="Ko-fi 후원 페이지 열기">후원하기</a>
       </header>
 
       <nav class="main-tabs" aria-label="Main tabs">
@@ -26,7 +27,10 @@
         <div id="mech-browser-layout" class="mech-browser-layout">
           <aside class="sidebar">
             <div class="toolbar">
-              <input id="mech-search" type="search" placeholder="Search chassis or variant">
+              <div class="mech-toolbar-row">
+                <input id="mech-search" type="search" placeholder="Search chassis or variant">
+                <button id="mech-list-view-toggle" class="mech-list-view-toggle" type="button" aria-pressed="true" title="작은 리스트 보기"><<</button>
+              </div>
               <select id="faction-filter">
                 <option value="">All factions</option>
                 <option value="InnerSphere">Inner Sphere</option>
@@ -38,6 +42,10 @@
                 <option value="medium">미듐</option>
                 <option value="heavy">해비</option>
                 <option value="assault">어썰트</option>
+              </select>
+              <select id="mech-sort">
+                <option value="default">기본 정렬</option>
+                <option value="tons">톤수 정렬</option>
               </select>
             </div>
             <div id="mech-list" class="mech-list"></div>
