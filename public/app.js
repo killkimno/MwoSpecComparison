@@ -71,6 +71,7 @@ const state = {
   largeMechList: true,
   mechSort: "default",
   mechListSummaryCache: new Map(),
+  mechHardpointBadgeCache: new Map(),
   selectedMech: null,
   selectedChassis: "",
   expandedChassis: new Set(),
@@ -139,6 +140,16 @@ function hardpointBadges(mech, build = buildFromLoadout(mech)) {
     .filter(([type]) => ["ballistic", "energy", "missile", "ams", "ecm"].includes(type))
     .map(([type, count]) => `<span class="badge ${type}">${type[0].toUpperCase()} ${count}</span>`)
     .join("");
+}
+
+function stockHardpointBadges(mech) {
+  const key = String(mech?.id || "");
+  if (!key) return "";
+  const cached = state.mechHardpointBadgeCache.get(key);
+  if (cached !== undefined) return cached;
+  const badges = hardpointBadges(mech, buildFromLoadout(mech));
+  state.mechHardpointBadgeCache.set(key, badges);
+  return badges;
 }
 
 function mechListQuirkValues(mech) {
@@ -438,7 +449,16 @@ function effectiveDefinition(mech = state.selectedMech, build = state.currentBui
 
 function setMainTab(tabName) {
   if (tabName === "mechlab") tabName = "info";
+  const isCompareTab = tabName === "compare";
   state.activeMainTab = tabName;
+  state.compareMode = isCompareTab;
+  if (isCompareTab) {
+    state.compareMechIds = [];
+    state.compareBaselineMechId = null;
+    state.selectedChassis = "";
+  } else if (state.selectedMech) {
+    state.selectedChassis = state.selectedMech.chassis || "";
+  }
   document.querySelectorAll("[data-main-tab]").forEach((button) => {
     const active = button.dataset.mainTab === tabName;
     button.classList.toggle("active", active);
@@ -451,6 +471,9 @@ function setMainTab(tabName) {
   });
   $("mech-browser-layout").hidden = tabName === "stats";
   $("summary-strip").hidden = tabName !== "mechlab";
+  renderMechList();
+  renderInfoPanel();
+  renderComparePanel();
   updateCompareOverlay();
 }
 
@@ -1096,7 +1119,7 @@ function renderCompareOverlayHeader(mechs) {
 }
 
 function shouldShowCompareOverlay() {
-  if (!state.compareMode || state.activeMainTab !== "info") return false;
+  if (state.activeMainTab !== "compare") return false;
   const layout = $("mech-browser-layout");
   const table = document.querySelector(".compare-table");
   const tableHead = document.querySelector(".compare-table thead");
@@ -1166,21 +1189,6 @@ function updateCompareOverlay() {
 
 function renderInfoPanel() {
   $("info-apply-quirks").checked = state.infoApplyQuirks;
-  $("info-compare-mode").checked = state.compareMode;
-  $("info-compare-deltas").checked = state.compareShowDeltas;
-  $("info-compare-deltas-row").hidden = !state.compareMode;
-  $("info-clear-compare").hidden = !state.compareMode;
-
-  if (state.compareMode) {
-    const mechs = compareMechs();
-    $("info-variant-name").textContent = "멕 비교";
-    $("info-variant-meta").textContent = compareSelectionText(mechs);
-    $("mech-info").className = "compare-grid";
-    $("mech-info").innerHTML = renderCompareTable(mechs);
-    document.querySelector(".compare-table-wrap")?.addEventListener("scroll", updateCompareOverlay, { passive: true });
-    updateCompareOverlay();
-    return;
-  }
 
   updateCompareOverlay();
   $("mech-info").className = "info-grid";
@@ -1236,6 +1244,17 @@ function renderInfoPanel() {
     ]),
     renderInfoQuirks(quirks),
   ].join("");
+}
+
+function renderComparePanel() {
+  $("compare-deltas").checked = state.compareShowDeltas;
+  $("compare-apply-quirks").checked = state.infoApplyQuirks;
+  const mechs = compareMechs();
+  $("compare-variant-name").textContent = "멕 비교";
+  $("compare-variant-meta").textContent = compareSelectionText(mechs);
+  $("compare-info").innerHTML = renderCompareTable(mechs);
+  document.querySelector(".compare-table-wrap")?.addEventListener("scroll", updateCompareOverlay, { passive: true });
+  updateCompareOverlay();
 }
 
 function calculateBuild() {
@@ -1357,18 +1376,9 @@ function renderSummary() {
 }
 
 function renderMechList() {
-  const search = $("mech-search").value.trim().toLowerCase();
-  const factionFilter = $("faction-filter").value;
-  const weightFilter = $("weight-filter").value;
-  const filtered = state.mechs.filter((mech) => {
-    const matchesSearch = !search || `${mech.display_name} ${mech.name} ${mech.chassis}`.toLowerCase().includes(search);
-    const matchesFaction = !factionFilter || mech.faction === factionFilter;
-    const matchesWeight = !weightFilter || mech.weight_class === weightFilter;
-    return matchesSearch && matchesFaction && matchesWeight;
-  });
+  const filtered = filteredMechsForList();
   const grouped = groupMechsForList(filtered);
-  const firstCompareMech = compareMechs()[0];
-  const activeChassis = state.selectedChassis || (state.compareMode ? firstCompareMech?.chassis : state.selectedMech?.chassis) || "";
+  const activeChassis = activeChassisForList();
   const classNames = sortedClassNames(grouped);
 
   const layout = $("mech-browser-layout");
@@ -1411,6 +1421,69 @@ function renderMechList() {
     .join("");
 }
 
+function filteredMechsForList() {
+  const search = $("mech-search").value.trim().toLowerCase();
+  const factionFilter = $("faction-filter").value;
+  const weightFilter = $("weight-filter").value;
+  return state.mechs.filter((mech) => {
+    const matchesSearch = !search || `${mech.display_name} ${mech.name} ${mech.chassis}`.toLowerCase().includes(search);
+    const matchesFaction = !factionFilter || mech.faction === factionFilter;
+    const matchesWeight = !weightFilter || mech.weight_class === weightFilter;
+    return matchesSearch && matchesFaction && matchesWeight;
+  });
+}
+
+function activeChassisForList() {
+  const firstCompareMech = compareMechs()[0];
+  return state.selectedChassis || (state.compareMode ? firstCompareMech?.chassis : state.selectedMech?.chassis) || "";
+}
+
+function findChassisGroupForCurrentList(chassis) {
+  const grouped = groupMechsForList(filteredMechsForList());
+  for (const weightClass of sortedClassNames(grouped)) {
+    const group = chassisGroupsForWeight(grouped, weightClass).find((item) => item.chassis === chassis);
+    if (group) return group;
+  }
+  return null;
+}
+
+function chassisGroupElement(chassis) {
+  return Array.from($("mech-list").querySelectorAll(".chassis-group"))
+    .find((element) => element.dataset.chassisGroup === chassis) || null;
+}
+
+function syncMechListActiveStates(activeChassis = activeChassisForList()) {
+  const selectedMechId = state.selectedMech?.id;
+  const compareIds = new Set(state.compareMechIds.map((id) => String(id)));
+  $("mech-list").querySelectorAll(".chassis-group").forEach((group) => {
+    const active = group.dataset.chassisGroup === activeChassis;
+    group.classList.toggle("active", active);
+    group.querySelector("[data-chassis]")?.classList.toggle("active", active);
+  });
+  $("mech-list").querySelectorAll("[data-mech]").forEach((button) => {
+    const mech = mechById(button.dataset.mech);
+    const selected = state.compareMode
+      ? compareIds.has(String(button.dataset.mech))
+      : String(selectedMechId || "") === String(button.dataset.mech);
+    button.classList.toggle("active", selected);
+    if (button.classList.contains("mech-card")) {
+      button.classList.toggle("chassis-active", mech?.chassis === activeChassis);
+    }
+  });
+}
+
+function renderChassisGroupInPlace(chassis) {
+  const element = chassisGroupElement(chassis);
+  const group = findChassisGroupForCurrentList(chassis);
+  if (!element || !group) return false;
+  const activeChassis = activeChassisForList();
+  element.outerHTML = state.largeMechList
+    ? renderLargeChassisGroup(group, activeChassis)
+    : renderSmallChassisGroup(group, activeChassis);
+  syncMechListActiveStates(activeChassis);
+  return true;
+}
+
 function renderLargeMechList(classNames, grouped, activeChassis) {
   $("mech-list").innerHTML = classNames
     .map((weightClass) => {
@@ -1450,7 +1523,7 @@ function renderSmallChassisGroup(group, activeChassis) {
   const active = group.chassis === activeChassis ? " active" : "";
   const expanded = state.expandedChassis.has(group.chassis);
   return `
-    <div class="chassis-group${active}${expanded ? " expanded" : ""}">
+    <div class="chassis-group${active}${expanded ? " expanded" : ""}" data-chassis-group="${group.chassis}">
       <button class="chassis-row${active}" data-chassis="${group.chassis}" type="button" aria-expanded="${expanded}">
         <span class="row-title">
           <span class="chassis-title"><span class="expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span><strong>${group.label}</strong></span>
@@ -1480,7 +1553,7 @@ function renderVariantRow(mech) {
         <span class="mech-title-main">${omnipodIcon(mech)}<strong>${variantCode(mech)}</strong></span>
         <span>${mech.faction || "unknown"}</span>
       </span>
-      <span class="badge-line">${hardpointBadges(mech)}</span>
+      <span class="badge-line">${stockHardpointBadges(mech)}</span>
     </button>
   `;
 }
@@ -1489,7 +1562,7 @@ function renderLargeChassisGroup(group, activeChassis) {
   const active = group.chassis === activeChassis ? " active" : "";
   const expanded = state.expandedChassis.has(group.chassis);
   return `
-    <div class="chassis-group${active}${expanded ? " expanded" : ""}">
+    <div class="chassis-group${active}${expanded ? " expanded" : ""}" data-chassis-group="${group.chassis}">
       <button class="chassis-row large-chassis-row${active}" data-chassis="${group.chassis}" type="button" aria-expanded="${expanded}">
         <span class="chassis-title">
           <span class="expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span>
@@ -1529,7 +1602,7 @@ function renderMechCard(mech, activeChassis) {
         <span><span>가속/감속</span><strong><span class="${accelerationBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.acceleration, 1)}</span> / <span class="${decelerationBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.deceleration, 1)}</span></strong></span>
         <span><span>선회속도</span><strong class="${turnBoosted ? "boosted" : ""}">${formatInfoNumber(data.movement.turnSpeed, 2)}</strong></span>
       </span>
-      <span class="badge-line">${hardpointBadges(mech)}</span>
+      <span class="badge-line">${stockHardpointBadges(mech)}</span>
     </button>
   `;
 }
@@ -1672,6 +1745,7 @@ function renderAll() {
   renderEquipmentList();
   renderSelectedItem();
   renderInfoPanel();
+  renderComparePanel();
   if (state.selectedMech) {
     renderVariant();
   } else {
@@ -1687,19 +1761,6 @@ function selectMech(id) {
   renderAll();
 }
 
-function setCompareMode(enabled) {
-  state.compareMode = enabled;
-  if (!enabled) {
-    state.compareBaselineMechId = null;
-  }
-  if (enabled && !state.compareMechIds.length && state.selectedMech) {
-    state.compareMechIds = [state.selectedMech.id];
-    state.selectedChassis = state.selectedMech.chassis || state.selectedChassis;
-    if (state.selectedChassis) state.expandedChassis.add(state.selectedChassis);
-  }
-  renderAll();
-}
-
 function toggleCompareMech(id) {
   const mech = mechById(id);
   if (!mech) return;
@@ -1709,13 +1770,16 @@ function toggleCompareMech(id) {
     if (String(state.compareBaselineMechId) === String(id)) {
       state.compareBaselineMechId = null;
     }
+    if (!state.compareMechIds.length) {
+      state.selectedChassis = "";
+    }
   } else if (state.compareMechIds.length < MAX_COMPARE_MECHS) {
     state.compareMechIds.push(mech.id);
+    state.selectedChassis = mech.chassis || state.selectedChassis;
   } else {
     $("data-status").textContent = `비교는 최대 ${MAX_COMPARE_MECHS}개까지 선택할 수 있습니다.`;
     return;
   }
-  state.selectedChassis = mech.chassis || state.selectedChassis;
   if (state.selectedChassis) state.expandedChassis.add(state.selectedChassis);
   renderAll();
 }
@@ -1727,12 +1791,18 @@ function removeCompareMech(id) {
   if (String(state.compareBaselineMechId) === String(id)) {
     state.compareBaselineMechId = null;
   }
+  if (!state.compareMechIds.length) {
+    state.selectedChassis = "";
+  }
   renderAll();
 }
 
 function clearCompareMechs() {
   state.compareMechIds = [];
   state.compareBaselineMechId = null;
+  if (state.compareMode) {
+    state.selectedChassis = "";
+  }
   renderAll();
 }
 
@@ -1740,7 +1810,7 @@ function toggleCompareBaseline(id) {
   const exists = state.compareMechIds.some((mechId) => String(mechId) === String(id));
   if (!exists) return;
   state.compareBaselineMechId = String(state.compareBaselineMechId) === String(id) ? null : id;
-  renderInfoPanel();
+  renderComparePanel();
 }
 
 function toggleCompareCategory(category) {
@@ -1750,7 +1820,7 @@ function toggleCompareCategory(category) {
   } else {
     state.collapsedCompareCategories.add(category);
   }
-  renderInfoPanel();
+  renderComparePanel();
 }
 
 function selectItem(id) {
@@ -1796,19 +1866,23 @@ function bindEvents() {
     state.infoApplyQuirks = event.target.checked;
     renderMechList();
     renderInfoPanel();
+    renderComparePanel();
   });
   $("mech-list-view-toggle").addEventListener("click", () => {
     state.largeMechList = !state.largeMechList;
     renderMechList();
     updateCompareOverlay();
   });
-  $("info-compare-mode").addEventListener("change", (event) => {
-    setCompareMode(event.target.checked);
-  });
-  $("info-clear-compare").addEventListener("click", clearCompareMechs);
-  $("info-compare-deltas").addEventListener("change", (event) => {
+  $("compare-clear-compare").addEventListener("click", clearCompareMechs);
+  $("compare-deltas").addEventListener("change", (event) => {
     state.compareShowDeltas = event.target.checked;
+    renderComparePanel();
+  });
+  $("compare-apply-quirks").addEventListener("change", (event) => {
+    state.infoApplyQuirks = event.target.checked;
+    renderMechList();
     renderInfoPanel();
+    renderComparePanel();
   });
   $("compare-overlay").addEventListener("click", (event) => {
     const remove = event.target.closest("[data-remove-compare]");
@@ -1824,13 +1898,13 @@ function bindEvents() {
   });
   document.querySelector(".tab-content").addEventListener("scroll", updateCompareOverlay, { passive: true });
   window.addEventListener("resize", updateCompareOverlay, { passive: true });
-  $("mech-info").addEventListener("click", (event) => {
+  $("compare-info").addEventListener("click", (event) => {
     const remove = event.target.closest("[data-remove-compare]");
     if (remove) {
       removeCompareMech(remove.dataset.removeCompare);
       return;
     }
-    const category = state.compareMode ? event.target.closest("[data-compare-category]") : null;
+    const category = event.target.closest("[data-compare-category]");
     if (category) {
       event.preventDefault();
       toggleCompareCategory(category.dataset.compareCategory);
@@ -1853,7 +1927,10 @@ function bindEvents() {
       } else {
         state.expandedChassis.add(state.selectedChassis);
       }
-      renderMechList();
+      if (!renderChassisGroupInPlace(state.selectedChassis)) {
+        renderMechList();
+      }
+      updateCompareOverlay();
       return;
     }
     const button = event.target.closest("[data-mech]");

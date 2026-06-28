@@ -19,7 +19,8 @@
 
       <nav class="main-tabs" aria-label="Main tabs">
         <button class="tab-button" type="button" data-main-tab="mechlab" aria-controls="tab-mechlab" disabled aria-disabled="true">현재 멕랩</button>
-        <button class="tab-button active" type="button" data-main-tab="info" aria-controls="tab-info">비교/정보</button>
+        <button class="tab-button active" type="button" data-main-tab="info" aria-controls="tab-info">정보</button>
+        <button class="tab-button" type="button" data-main-tab="compare" aria-controls="tab-compare">비교하기</button>
         <button class="tab-button" type="button" data-main-tab="stats" aria-controls="tab-stats">통계</button>
       </nav>
 
@@ -110,21 +111,33 @@
                 </div>
                 <div class="info-actions">
                   <label class="toggle-row">
-                    <input id="info-compare-mode" type="checkbox">
-                    <span>비교하기</span>
-                  </label>
-                  <button id="info-clear-compare" class="info-clear-compare" type="button" hidden>비교 리스트 모두 지우기</button>
-                  <label id="info-compare-deltas-row" class="toggle-row" hidden>
-                    <input id="info-compare-deltas" type="checkbox" checked>
-                    <span>차이 표시</span>
-                  </label>
-                  <label class="toggle-row">
                     <input id="info-apply-quirks" type="checkbox" checked>
                     <span>쿼크 적용</span>
                   </label>
                 </div>
               </section>
               <div id="mech-info" class="info-grid"></div>
+            </section>
+
+            <section id="tab-compare" class="tab-panel info-workspace" hidden>
+              <section class="variant-panel">
+                <div>
+                  <h2 id="compare-variant-name">멕 비교</h2>
+                  <div id="compare-variant-meta" class="muted"></div>
+                </div>
+                <div class="info-actions">
+                  <button id="compare-clear-compare" class="info-clear-compare" type="button">비교 리스트 모두 지우기</button>
+                  <label class="toggle-row">
+                    <input id="compare-deltas" type="checkbox" checked>
+                    <span>차이 표시</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input id="compare-apply-quirks" type="checkbox" checked>
+                    <span>쿼크 적용</span>
+                  </label>
+                </div>
+              </section>
+              <div id="compare-info" class="compare-grid"></div>
             </section>
           </div>
         </div>
