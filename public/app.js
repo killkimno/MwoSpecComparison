@@ -46,8 +46,9 @@ const WEIGHT_CLASS_LABELS = {
   assault: "Assault",
 };
 
-const MAX_COMPARE_MECHS = 7;
+const MAX_COMPARE_MECHS = 15;
 const COMPARE_RANK_EPSILON = 0.0001;
+const DEFAULT_COLLAPSED_COMPARE_CATEGORIES = ["종합 내구", "아머 정보", "스트럭쳐 정보"];
 
 const state = {
   index: null,
@@ -61,6 +62,7 @@ const state = {
   compareMechIds: [],
   compareBaselineMechId: null,
   compareShowDeltas: true,
+  collapsedCompareCategories: new Set(DEFAULT_COLLAPSED_COMPARE_CATEGORIES),
   selectedMech: null,
   selectedChassis: "",
   expandedChassis: new Set(),
@@ -701,16 +703,18 @@ function compareColorClassForCell(cell, cells, entry) {
 function renderCompareCell(row, data, entry) {
   const cells = data.map((dataEntry) => ({ entry: dataEntry, cell: row.value(dataEntry) }));
   const cell = cells.find((item) => item.entry === entry)?.cell || row.value(entry);
+  const isBaseline = String(state.compareBaselineMechId) === String(entry.mech.id);
+  const classAttribute = isBaseline ? ` class="compare-baseline-column"` : "";
   const ranks = cells
     .map((item) => item.cell.rank)
     .filter((rank) => Number.isFinite(rank));
   if (data.length < 2 || !Number.isFinite(cell.rank) || ranks.length < 2) {
-    return `<td><span class="compare-cell-value">${cell.text}</span></td>`;
+    return `<td${classAttribute}><span class="compare-cell-value">${cell.text}</span></td>`;
   }
 
   const className = compareColorClassForCell(cell, cells, entry);
   return `
-    <td>
+    <td${classAttribute}>
       <span class="compare-cell-value ${className}">${cell.text}</span>
       ${compareDeltaForCell(cell, cells, entry)}
     </td>
@@ -736,6 +740,10 @@ function renderCompareTable(mechs) {
     { label: "체급", value: (entry) => compareText(WEIGHT_CLASS_LABELS[entry.mech.weight_class] || entry.mech.weight_class || "Unknown") },
     { label: "최소 엔진", value: (entry) => compareNumber(number(entry.stats.MinEngineRating), 0) },
     { label: "최대 엔진", value: (entry) => compareNumber(number(entry.stats.MaxEngineRating), 0) },
+    { group: "내구도 요약" },
+    { label: "아머 + 스트럭쳐 총합", value: (entry) => compareNumber(entry.combinedTotal, 0) },
+    { label: "아머 총합", value: (entry) => compareNumber(entry.armorTotal, 0) },
+    { label: "스트럭쳐 총합", value: (entry) => compareNumber(entry.structureTotal, 0) },
     { group: "종합 내구" },
     { label: "아머 + 스트럭쳐 총합", value: (entry) => compareNumber(entry.combinedTotal, 0) },
     ...bodyRows.map((row) => ({ label: row.label, value: row.combined })),
@@ -764,8 +772,15 @@ function renderCompareTable(mechs) {
           <tr>
             <th scope="col">항목</th>
             ${data
-              .map((entry) => `
-                <th scope="col">
+              .map((entry) => {
+                const isBaseline = String(state.compareBaselineMechId) === String(entry.mech.id);
+                return `
+                <th
+                  class="${isBaseline ? "compare-baseline-column" : ""}"
+                  data-compare-baseline="${entry.mech.id}"
+                  scope="col"
+                  title="기준으로 설정"
+                >
                   <span class="compare-title">
                     <label class="compare-baseline-toggle" data-compare-baseline="${entry.mech.id}" title="기준">
                       <input
@@ -781,23 +796,38 @@ function renderCompareTable(mechs) {
                   </span>
                   <span class="compare-meta">${entry.mech.faction || "Unknown"} - ${entry.stats.MaxTons || "?"}t</span>
                 </th>
-              `)
+              `;
+              })
               .join("")}
           </tr>
         </thead>
         <tbody>
           ${rows
-            .map((row) => {
+            .reduce((html, row) => {
               if (row.group) {
-                return `<tr class="compare-group"><th scope="row" colspan="${data.length + 1}">${row.group}</th></tr>`;
+                const collapsed = state.collapsedCompareCategories.has(row.group);
+                html.currentGroupCollapsed = collapsed;
+                html.rows.push(`
+                  <tr class="compare-group${collapsed ? " compare-group-collapsed" : ""}">
+                    <th scope="row" colspan="${data.length + 1}">
+                      <button class="compare-group-toggle" data-compare-category="${row.group}" type="button" aria-expanded="${!collapsed}">
+                        <span class="compare-group-icon" aria-hidden="true">${collapsed ? "+" : "-"}</span>
+                        <span>${row.group}</span>
+                      </button>
+                    </th>
+                  </tr>
+                `);
+                return html;
               }
-              return `
+              if (html.currentGroupCollapsed) return html;
+              html.rows.push(`
                 <tr>
                   <th scope="row">${row.label}</th>
                   ${data.map((entry) => renderCompareCell(row, data, entry)).join("")}
                 </tr>
-              `;
-            })
+              `);
+              return html;
+            }, { rows: [], currentGroupCollapsed: false }).rows
             .join("")}
         </tbody>
       </table>
@@ -810,6 +840,7 @@ function renderInfoPanel() {
   $("info-compare-mode").checked = state.compareMode;
   $("info-compare-deltas").checked = state.compareShowDeltas;
   $("info-compare-deltas-row").hidden = !state.compareMode;
+  $("info-clear-compare").hidden = !state.compareMode;
 
   if (state.compareMode) {
     const mechs = compareMechs();
@@ -1275,10 +1306,26 @@ function removeCompareMech(id) {
   renderAll();
 }
 
+function clearCompareMechs() {
+  state.compareMechIds = [];
+  state.compareBaselineMechId = null;
+  renderAll();
+}
+
 function toggleCompareBaseline(id) {
   const exists = state.compareMechIds.some((mechId) => String(mechId) === String(id));
   if (!exists) return;
   state.compareBaselineMechId = String(state.compareBaselineMechId) === String(id) ? null : id;
+  renderInfoPanel();
+}
+
+function toggleCompareCategory(category) {
+  if (!category) return;
+  if (state.collapsedCompareCategories.has(category)) {
+    state.collapsedCompareCategories.delete(category);
+  } else {
+    state.collapsedCompareCategories.add(category);
+  }
   renderInfoPanel();
 }
 
@@ -1324,19 +1371,29 @@ function bindEvents() {
   $("info-compare-mode").addEventListener("change", (event) => {
     setCompareMode(event.target.checked);
   });
+  $("info-clear-compare").addEventListener("click", clearCompareMechs);
   $("info-compare-deltas").addEventListener("change", (event) => {
     state.compareShowDeltas = event.target.checked;
     renderInfoPanel();
   });
   $("mech-info").addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-compare]");
+    if (remove) {
+      removeCompareMech(remove.dataset.removeCompare);
+      return;
+    }
+    const category = state.compareMode ? event.target.closest("[data-compare-category]") : null;
+    if (category) {
+      event.preventDefault();
+      toggleCompareCategory(category.dataset.compareCategory);
+      return;
+    }
     const baseline = event.target.closest("[data-compare-baseline]");
     if (baseline) {
       event.preventDefault();
       toggleCompareBaseline(baseline.dataset.compareBaseline);
       return;
     }
-    const remove = event.target.closest("[data-remove-compare]");
-    if (remove) removeCompareMech(remove.dataset.removeCompare);
   });
 
   $("mech-list").addEventListener("click", (event) => {
