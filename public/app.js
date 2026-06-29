@@ -54,6 +54,12 @@ const FACTION_LABELS = {
 const MAX_COMPARE_MECHS = 15;
 const COMPARE_RANK_EPSILON = 0.0001;
 const DEFAULT_COLLAPSED_COMPARE_CATEGORIES = ["종합 내구", "아머 정보", "스트럭쳐 정보"];
+const DIRECT_COOLDOWN_QUIRKS = new Set([
+  "all_cooldown_multiplier",
+  "energy_cooldown_multiplier",
+  "missile_cooldown_multiplier",
+  "ballistic_cooldown_multiplier",
+]);
 
 const state = {
   index: null,
@@ -73,6 +79,8 @@ const state = {
   mechSort: "default",
   mechListSummaryCache: new Map(),
   mechHardpointBadgeCache: new Map(),
+  weaponQuirkTypeCache: null,
+  weaponQuirkTargetCache: null,
   selectedMech: null,
   selectedChassis: "",
   expandedChassis: new Set(),
@@ -89,6 +97,10 @@ function number(value, fallback = 0) {
 function fmt(value, digits = 1) {
   const numeric = number(value);
   return Number.isInteger(numeric) ? `${numeric}` : numeric.toFixed(digits);
+}
+
+function normalizeLookupKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function itemById(id) {
@@ -795,28 +807,190 @@ function specHeader(label) {
   `;
 }
 
+function quirkSectionTitle(quirk) {
+  const match = (quirk.source_text || "").match(/\b(\d+)pc\b/i);
+  return match ? `SET OF ${match[1]}` : "QUIRKS";
+}
+
+function quirkToneClass(quirk) {
+  const text = `${quirk.name || ""} ${quirk.display_name || ""}`.toLowerCase();
+  if (text.includes("laser") || text.includes("energy")) return "quirk-tone-energy";
+  if (text.includes("missile") || text.includes("lrm") || text.includes("srm") || text.includes("atm") || text.includes("narc")) return "quirk-tone-missile";
+  if (text.includes("armor") || text.includes("structure") || text.includes("resist")) return "quirk-tone-armor";
+  return "quirk-tone-default";
+}
+
+function quirkReduction(quirks, name) {
+  const quirk = quirks.find((entry) => entry.name.toLowerCase() === name);
+  return Math.max(0, -number(quirk?.value));
+}
+
+function weaponQuirkTargets() {
+  if (state.weaponQuirkTargetCache) return state.weaponQuirkTargetCache;
+
+  const aliasTypes = new Map();
+  const weapons = [];
+  for (const item of Object.values(state.equipment?.items || {})) {
+    if (item.item_type !== "weapon" && item.family !== "weapons") continue;
+    const type = String(item.hardpoint_type || item.stats?.type || "").toLowerCase();
+    if (!["energy", "missile", "ballistic"].includes(type)) continue;
+
+    const keys = new Set([
+      item.name,
+      item.display_name,
+      ...(String(item.aliases || "").split(",")),
+    ].map(normalizeLookupKey).filter(Boolean));
+
+    weapons.push({ type, keys });
+
+    for (const key of keys) {
+      if (!aliasTypes.has(key)) aliasTypes.set(key, new Set());
+      aliasTypes.get(key).add(type);
+    }
+  }
+
+  state.weaponQuirkTargetCache = { aliasTypes, weapons };
+  return state.weaponQuirkTargetCache;
+}
+
+function weaponQuirkTypeLookup() {
+  if (state.weaponQuirkTypeCache) return state.weaponQuirkTypeCache;
+  state.weaponQuirkTypeCache = weaponQuirkTargets().aliasTypes;
+  return state.weaponQuirkTypeCache;
+}
+
+function cooldownQuirkPrefix(quirkName) {
+  const name = String(quirkName || "").toLowerCase();
+  if (!name.endsWith("_cooldown_multiplier") || DIRECT_COOLDOWN_QUIRKS.has(name)) return "";
+  return normalizeLookupKey(name.replace(/_cooldown_multiplier$/, ""));
+}
+
+function cooldownQuirkWeaponType(quirkName) {
+  const prefix = cooldownQuirkPrefix(quirkName);
+  if (!prefix) return null;
+  const types = weaponQuirkTypeLookup().get(prefix);
+  if (!types || types.size !== 1) return null;
+  return Array.from(types)[0];
+}
+
+function energyWeaponCooldownMax(quirks) {
+  const activeCooldowns = quirks
+    .map((quirk) => ({
+      prefix: cooldownQuirkPrefix(quirk.name),
+      value: Math.max(0, -number(quirk.value)),
+    }))
+    .filter((quirk) => quirk.prefix && quirk.value > 0);
+
+  let maxCooldown = 0;
+  for (const weapon of weaponQuirkTargets().weapons) {
+    if (weapon.type !== "energy") continue;
+    const cooldown = activeCooldowns.reduce((sum, quirk) => (
+      weapon.keys.has(quirk.prefix) ? sum + quirk.value : sum
+    ), 0);
+    maxCooldown = Math.max(maxCooldown, cooldown);
+  }
+  return maxCooldown;
+}
+
+function formatQuirkSummaryPercent(value) {
+  return value > 0 ? `${fmt(value * 100, 1)}%` : "-";
+}
+
+function attackQuirkSummary(quirks) {
+  const allCooldown = quirkReduction(quirks, "all_cooldown_multiplier");
+  const weaponCooldownMax = { energy: 0, missile: 0, ballistic: 0 };
+
+  for (const quirk of quirks) {
+    const type = cooldownQuirkWeaponType(quirk.name);
+    if (!type) continue;
+    weaponCooldownMax[type] = Math.max(weaponCooldownMax[type], Math.max(0, -number(quirk.value)));
+  }
+
+  const energyCooldown = allCooldown + quirkReduction(quirks, "energy_cooldown_multiplier") + energyWeaponCooldownMax(quirks);
+  const groups = [
+    {
+      label: "ENERGY COOLDOWN",
+      className: "quirk-tone-energy",
+      value: energyCooldown,
+    },
+    {
+      label: "MISSILE COOLDOWN",
+      className: "quirk-tone-missile",
+      value: allCooldown + quirkReduction(quirks, "missile_cooldown_multiplier") + weaponCooldownMax.missile,
+    },
+    {
+      label: "BALLISTIC COOLDOWN",
+      className: "quirk-tone-default",
+      value: allCooldown + quirkReduction(quirks, "ballistic_cooldown_multiplier") + weaponCooldownMax.ballistic,
+    },
+  ];
+  const maxCooldown = Math.max(allCooldown, ...groups.map((group) => group.value));
+  if (maxCooldown <= 0) return "";
+
+  return `
+    <div class="quirk-summary">
+      <div class="quirk-summary-title">ATTACK SUMMARY</div>
+      <div class="quirk-summary-grid">
+        <div class="quirk-summary-item quirk-summary-max">
+          <span>MAX COOLDOWN</span>
+          <strong>${formatQuirkSummaryPercent(maxCooldown)}</strong>
+        </div>
+        ${groups
+          .map((group) => `
+            <div class="quirk-summary-item ${group.className}">
+              <span>${group.label}</span>
+              <strong>${formatQuirkSummaryPercent(group.value)}</strong>
+            </div>
+          `)
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuirkList(quirks, emptyText = "No quirks") {
+  if (!quirks.length) return `<div class="empty">${emptyText}</div>`;
+
+  const sections = [];
+  for (const quirk of quirks) {
+    const title = quirkSectionTitle(quirk);
+    let section = sections.find((entry) => entry.title === title);
+    if (!section) {
+      section = { title, quirks: [] };
+      sections.push(section);
+    }
+    section.quirks.push(quirk);
+  }
+
+  return `${attackQuirkSummary(quirks)}${sections
+    .map((section) => `
+      <div class="quirk-section">
+        ${section.title === "QUIRKS" ? "" : `<div class="quirk-section-title">${section.title}</div>`}
+        <div class="quirk-rows">
+          ${section.quirks
+            .map((quirk) => {
+              const tone = quirkToneClass(quirk);
+              return `
+                <div class="quirk ${tone}" title="${quirk.source_text || quirk.name}">
+                  <span class="quirk-name">${quirk.display_name}</span>
+                  <span class="quirk-value">${quirk.value_text}</span>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+    `)
+    .join("")}`;
+}
+
 function renderInfoQuirks(quirks) {
   return `
     <section class="info-card info-quirks-card">
       <div class="section-title-row">
-        <h3>쿼크 리스트</h3>
-        <span class="muted">${quirks.length} quirks</span>
+        <h3>QUIRKS</h3>
       </div>
-      <div class="quirks">
-        ${quirks.length
-          ? quirks
-              .map((quirk) => `
-                <div class="quirk">
-                  <span class="quirk-name">
-                    <strong>${quirk.display_name}</strong>
-                    <span class="muted">${quirk.source_text || quirk.name}</span>
-                  </span>
-                  <span class="quirk-value">${quirk.value_text}</span>
-                </div>
-              `)
-              .join("")
-          : `<div class="empty">No quirks</div>`}
-      </div>
+      <div class="quirks">${renderQuirkList(quirks)}</div>
     </section>
   `;
 }
@@ -1757,18 +1931,8 @@ function renderLoadoutItem(component, entry, index) {
 
 function renderQuirks() {
   const quirks = effectiveQuirks();
-  $("quirk-count").textContent = quirks.length ? `${quirks.length} active` : "None";
-  $("quirks").innerHTML = quirks.length
-    ? quirks.map((quirk) => `
-      <div class="quirk" title="${quirk.name}">
-        <span class="quirk-name">
-          <strong>${quirk.display_name}</strong>
-          <span class="muted">${quirk.source_text || quirk.name}</span>
-        </span>
-        <span class="quirk-value">${quirk.value_text}</span>
-      </div>
-    `).join("")
-    : `<div class="empty">No quirks found for this mech.</div>`;
+  $("quirk-count").textContent = "";
+  $("quirks").innerHTML = renderQuirkList(quirks, "No quirks found for this mech.");
 }
 
 function renderVariant() {
@@ -1788,7 +1952,7 @@ function renderSelectionPrompt() {
   $("variant-name").textContent = "멕을 선택하세요";
   $("variant-meta").textContent = "왼쪽 목록에서 카테고리를 펼친 뒤 멕을 선택하세요.";
   renderSummary();
-  $("quirk-count").textContent = "None";
+  $("quirk-count").textContent = "";
   $("quirks").innerHTML = `<div class="empty">멕을 선택하면 쿼크가 표시됩니다.</div>`;
   $("components").innerHTML = `<div class="empty">멕을 선택하면 구성 부품이 표시됩니다.</div>`;
 }
