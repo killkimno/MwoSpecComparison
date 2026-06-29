@@ -206,6 +206,10 @@ h3 {
   min-height: 0;
 }
 
+.mech-browser-layout[hidden] {
+  display: none;
+}
+
 .mech-browser-layout.large-mech-list-layout {
   grid-template-columns: minmax(34rem, 50vw) minmax(0, 1fr);
 }
@@ -661,6 +665,212 @@ h3 {
 
 .info-workspace {
   padding: 1rem;
+}
+
+.stats-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stats-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: #101719;
+}
+
+.stats-button {
+  min-width: 7rem;
+  border-color: #49606a;
+  background: #172024;
+  color: var(--muted);
+}
+
+.stats-button.active {
+  border-color: var(--blue);
+  background: #214557;
+  color: var(--text);
+}
+
+.stats-workspace {
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.stats-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.stats-list {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 82rem;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 3.1rem minmax(14rem, 1fr) 8rem minmax(15rem, 24rem);
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 3.15rem;
+  padding: 0 0 0 0.75rem;
+  border: 1px solid #22333a;
+  border-left: 4px solid var(--blue);
+  border-radius: 0;
+  background: #11191c;
+}
+
+.stats-row:hover {
+  background: #22313a;
+}
+
+.stats-row.faction-clan {
+  border-left-color: var(--green);
+}
+
+.stats-rank {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.2rem;
+  height: 1.55rem;
+  border: 1px solid #41616d;
+  border-radius: 3px;
+  color: var(--blue);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-row.faction-clan .stats-rank {
+  border-color: #6f8f45;
+  color: var(--green);
+}
+
+.stats-mech-main {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.stats-mech-main .mech-title-main strong {
+  color: var(--blue);
+  font-size: 0.95rem;
+}
+
+.stats-row.faction-clan .stats-mech-main .mech-title-main strong {
+  color: var(--green);
+}
+
+.stats-subline {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.1;
+}
+
+.stats-value-block {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid #263840;
+  border-radius: 4px;
+  background: #101719;
+  text-align: right;
+}
+
+.stats-value-block span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-value-block strong {
+  overflow: hidden;
+  color: var(--green);
+  font-size: 0.95rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-extra,
+.stats-hardpoints {
+  display: flex;
+  min-width: 0;
+  gap: 0.35rem;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.stats-extra {
+  align-self: stretch;
+  min-height: 0;
+  padding: 0.52rem 0.75rem;
+  border: 0;
+  border-left: 1px solid #ffffff1f;
+  border-radius: 0;
+  background: #00000024;
+}
+
+.stats-hardpoints {
+  flex-wrap: wrap;
+}
+
+.stats-extra .badge,
+.stats-hardpoints .badge {
+  flex: 0 0 auto;
+}
+
+.weight-slot.weight-light {
+  border-left: 3px solid var(--green);
+  color: #b8dc86;
+}
+
+.stats-extra.weight-light {
+  border-left-color: #6f8f45;
+  background: #182815;
+}
+
+.weight-slot.weight-medium {
+  border-left: 3px solid var(--blue);
+  color: #8ed0ea;
+}
+
+.stats-extra.weight-medium {
+  border-left-color: #41616d;
+  background: #142833;
+}
+
+.weight-slot.weight-heavy {
+  border-left: 3px solid var(--yellow);
+  color: #f2da72;
+}
+
+.stats-extra.weight-heavy {
+  border-left-color: #816f2d;
+  background: #2b2715;
+}
+
+.weight-slot.weight-assault {
+  border-left: 3px solid var(--red);
+  color: #ee907f;
+}
+
+.stats-extra.weight-assault {
+  border-left-color: #85463d;
+  background: #2c1917;
 }
 
 .info-grid {
@@ -1425,5 +1635,20 @@ h3 {
 
   .mech-card-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats-workspace {
+    padding: 0.75rem;
+  }
+
+  .stats-row {
+    grid-template-columns: 2.8rem minmax(10rem, 1fr) 6rem minmax(12rem, 16rem);
+    gap: 0.45rem;
+    padding: 0 0 0 0.45rem;
+    overflow-x: auto;
+  }
+
+  .stats-rank {
+    min-width: 2rem;
   }
 }

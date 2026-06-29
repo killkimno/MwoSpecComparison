@@ -68,6 +68,7 @@ const state = {
   compareBaselineMechId: null,
   compareShowDeltas: true,
   collapsedCompareCategories: new Set(DEFAULT_COLLAPSED_COMPARE_CATEGORIES),
+  activeStatsView: "durability",
   largeMechList: true,
   mechSort: "default",
   mechListSummaryCache: new Map(),
@@ -221,6 +222,10 @@ function factionLabel(faction) {
 
 function factionClass(faction) {
   return faction === "Clan" ? "faction-clan" : "faction-innersphere";
+}
+
+function weightClassClass(weightClass) {
+  return `weight-${String(weightClass || "unknown").toLowerCase()}`;
 }
 
 function sortChassisGroups(a, b) {
@@ -474,6 +479,7 @@ function setMainTab(tabName) {
   renderMechList();
   renderInfoPanel();
   renderComparePanel();
+  renderStatsPanel();
   updateCompareOverlay();
 }
 
@@ -1257,6 +1263,53 @@ function renderComparePanel() {
   updateCompareOverlay();
 }
 
+function statsDurabilityEntries() {
+  return state.mechs
+    .map((mech) => ({
+      mech,
+      total: mechListSummary(mech).combinedTotal,
+    }))
+    .sort((a, b) => b.total - a.total || (a.mech.display_name || "").localeCompare(b.mech.display_name || "", undefined, { numeric: true }));
+}
+
+function renderStatsPanel() {
+  document.querySelectorAll("[data-stats-view]").forEach((button) => {
+    const active = button.dataset.statsView === state.activeStatsView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  if (state.activeStatsView !== "durability") {
+    $("stats-meta").textContent = "";
+    $("stats-list").innerHTML = "";
+    return;
+  }
+
+  const entries = statsDurabilityEntries();
+  $("stats-meta").textContent = `종합 내구도 총합 기준 - ${entries.length}개 멕`;
+  $("stats-list").innerHTML = entries.length
+    ? entries
+        .map((entry, index) => `
+          <div class="stats-row ${factionClass(entry.mech.faction)}">
+            <span class="stats-rank">${index + 1}</span>
+            <span class="stats-mech-main">
+              <span class="mech-title-main">${omnipodIcon(entry.mech)}<strong>${entry.mech.display_name || variantCode(entry.mech)}</strong></span>
+              <span class="stats-subline">${factionLabel(entry.mech.faction)} - ${entry.mech.definition?.stats?.MaxTons || "?"}t</span>
+            </span>
+            <span class="stats-value-block">
+              <span>내구도</span>
+              <strong>${formatInfoNumber(entry.total, 0)}</strong>
+            </span>
+            <span class="stats-extra ${weightClassClass(entry.mech.weight_class)}">
+              <span class="badge weight-slot ${weightClassClass(entry.mech.weight_class)}">${WEIGHT_CLASS_LABELS[entry.mech.weight_class] || entry.mech.weight_class || "Unknown"}</span>
+              <span class="stats-hardpoints">${stockHardpointBadges(entry.mech) || `<span class="badge">하드포인트 없음</span>`}</span>
+            </span>
+          </div>
+        `)
+        .join("")
+    : `<div class="empty">표시할 멕이 없습니다.</div>`;
+}
+
 function calculateBuild() {
   const mech = state.selectedMech;
   const definition = effectiveDefinition(mech, state.currentBuild);
@@ -1746,6 +1799,7 @@ function renderAll() {
   renderSelectedItem();
   renderInfoPanel();
   renderComparePanel();
+  renderStatsPanel();
   if (state.selectedMech) {
     renderVariant();
   } else {
@@ -1867,6 +1921,7 @@ function bindEvents() {
     renderMechList();
     renderInfoPanel();
     renderComparePanel();
+    renderStatsPanel();
   });
   $("mech-list-view-toggle").addEventListener("click", () => {
     state.largeMechList = !state.largeMechList;
@@ -1883,6 +1938,13 @@ function bindEvents() {
     renderMechList();
     renderInfoPanel();
     renderComparePanel();
+    renderStatsPanel();
+  });
+  document.querySelectorAll("[data-stats-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeStatsView = button.dataset.statsView;
+      renderStatsPanel();
+    });
   });
   $("compare-overlay").addEventListener("click", (event) => {
     const remove = event.target.closest("[data-remove-compare]");

@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Local MWO Mechlab</title>
+    <title>몽키해드의 MWO 멕랩</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <div id="app">
       <header class="topbar">
         <div>
-          <h1>Local MWO Mechlab</h1>
+          <h1>몽키해드의 MWO 멕랩</h1>
           <p id="data-status">Loading local data...</p>
         </div>
         <div class="summary-strip" id="summary-strip"></div>
@@ -142,7 +142,20 @@
           </div>
         </div>
 
-        <section id="tab-stats" class="tab-panel stats-panel" hidden></section>
+        <section id="tab-stats" class="tab-panel stats-panel" hidden>
+          <div class="stats-toolbar" aria-label="통계 종류">
+            <button class="stats-button active" type="button" data-stats-view="durability">내구도</button>
+          </div>
+          <section class="stats-workspace" aria-labelledby="stats-title">
+            <div class="stats-heading">
+              <div>
+                <h2 id="stats-title">멕 리스트 통계</h2>
+                <div id="stats-meta" class="muted"></div>
+              </div>
+            </div>
+            <div id="stats-list" class="stats-list"></div>
+          </section>
+        </section>
       </main>
     </div>
 
